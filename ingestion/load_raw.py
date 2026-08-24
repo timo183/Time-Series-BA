@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import polars as pl
 from polars import DataFrame
 
@@ -14,19 +16,31 @@ CSV_FILES_PATH = [
 
 XLSX_FILE_PATH = "MHLV_data-2015-2019.xlsx"
 
+FLOAT_OVERRIDES = {
+    "Cov_ratio": pl.Float64,
+    "Value": pl.Float64,
+    "Value_ScaleTo100": pl.Float64,
+}
+
 
 def load_2019_2026_file(path: str):
-    df: DataFrame = pl.read_csv(f"data/raw/{path}", separator="\t")
+    df: DataFrame = pl.read_csv(
+        f"data/raw/{path}", separator="\t", schema_overrides=FLOAT_OVERRIDES
+    )
     if "CountryCode" not in df.columns:  # 2021/2022 sind mit ; getrennt
-        df = pl.read_csv(f"data/raw/{path}", separator=";")
+        df = pl.read_csv(
+            f"data/raw/{path}", separator=";", schema_overrides=FLOAT_OVERRIDES
+        )
+    df = df.with_columns(
+        pl.col("DateUTC").str.to_datetime(time_unit="ms").alias("DateUTC")
+    )
     return df
 
 
 def load_2015_2019_file(path: str):
     sheets = pl.read_excel(f"data/raw/{path}", sheet_name=["2015-2017", "2018-2019"])
-    df1 = sheets["2015-2017"]
-    df2 = sheets["2018-2019"]
-    df = pl.concat([df1, df2], how="vertical")
+    df = pl.concat([sheets["2015-2017"], sheets["2018-2019"]], how="vertical")
+    df = df.with_columns(pl.col("DateUTC").cast(pl.Datetime("ms")))
     return df
 
 
@@ -39,8 +53,11 @@ def select_rellevant_columns(df: DataFrame):
 
 
 def save_df(df: DataFrame):
+    output_path = Path("data/processed/panel.csv")
+    if output_path.exists():
+        return
     df.write_csv(
-        "data/processed/panel.csv",
+        output_path,
         separator=";",  # z.B. Semikolon (Excel-Deutschland)
     )
 
