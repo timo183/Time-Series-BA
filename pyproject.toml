@@ -11,4 +11,5 @@ dependencies = [
     "polars>=1.43.2",
     "pydantic>=2.13.4",
     "seaborn>=0.13.2",
+    "statsmodels>=0.15.0",
 ]
