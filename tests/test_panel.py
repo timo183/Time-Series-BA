@@ -1,7 +1,27 @@
 from datetime import datetime
 
 import pandas as pd
+import pytest
 from pandas import DataFrame
+
+from common.loader import load_panel
+
+START_DATE = "31-12-2014 23:00"
+END_DATE = "31-03-2026 23:00"
+DATETIME_COLUMN = "DateUTC"
+FREQUENCY = "h"
+
+
+@pytest.fixture(scope="module")
+def panel() -> DataFrame:
+    """Load the processed electricity-load panel once for this test module."""
+    return load_panel()
+
+
+def test_check_duplicates(panel: DataFrame) -> None:
+    result = check_duplicates(panel)
+
+    assert result["exact_duplicates"] == 0
 
 
 def check_missing_values(df: DataFrame):
@@ -42,7 +62,7 @@ def check_duplicates(df, subset_columns=None):
 
 def check_time_series_completeness(
     df: DataFrame,
-    start="31-12-2024 23:00",
+    start="31-12-2014 23:00",
     end="31-03-2026 23:00",
     datetime_column="DateUTC",
     frequency="h",
@@ -83,13 +103,19 @@ def check_time_series_completeness(
         (valid_timestamps >= start_timestamp) & (valid_timestamps <= end_timestamp)
     ]
 
-    missing_timestamps = expected_timestamps.difference(observed_in_range)
-    duplicate_timestamps = observed_in_range[
-        observed_in_range.duplicated(keep=False)
-    ].unique().sort_values()
-    unexpected_timestamps = valid_timestamps[
-        (valid_timestamps < start_timestamp) | (valid_timestamps > end_timestamp)
-    ].unique().sort_values()
+    missing_timestamps = expected_timestamps.difference(other=observed_in_range)
+    duplicate_timestamps = (
+        observed_in_range[observed_in_range.duplicated(keep=False)]
+        .unique()
+        .sort_values()
+    )
+    unexpected_timestamps = (
+        valid_timestamps[
+            (valid_timestamps < start_timestamp) | (valid_timestamps > end_timestamp)
+        ]
+        .unique()
+        .sort_values()
+    )
     invalid_timestamp_count = int(timestamps.isna().sum())
 
     return {
