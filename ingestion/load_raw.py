@@ -62,12 +62,17 @@ def save_df(df: DataFrame):
     )
 
 
+def remove_overlap(df: DataFrame):
+    return df.filter(pl.col("DateUTC") < pl.datetime(2019, 1, 1, time_unit="ms"))
+
+
 def create_panel():
     dataframes: list[DataFrame] = []
 
     df = load_2015_2019_file(XLSX_FILE_PATH)
     df = filter_country(df)
     df = select_rellevant_columns(df)
+    df = remove_overlap(df)
     dataframes.append(df)
 
     for csv_file_path in CSV_FILES_PATH:

@@ -1,15 +1,14 @@
-from datetime import datetime
-
 import pandas as pd
 import pytest
-from pandas import DataFrame
+from pandas import DataFrame, DatetimeIndex
 
 from common.loader import load_panel
-
-START_DATE = "31-12-2014 23:00"
-END_DATE = "31-03-2026 23:00"
-DATETIME_COLUMN = "DateUTC"
-FREQUENCY = "h"
+from config import (
+    DATETIME_COLUMN,
+    END_DATETIME,
+    FREQUENCY,
+    START_DATETIME,
+)
 
 
 @pytest.fixture(scope="module")
@@ -18,117 +17,99 @@ def panel() -> DataFrame:
     return load_panel()
 
 
-def test_check_duplicates(panel: DataFrame) -> None:
-    result = check_duplicates(panel)
-
-    assert result["exact_duplicates"] == 0
-
-
-def check_missing_values(df: DataFrame):
-    missing_stats = pd.DataFrame(
-        {
-            "total_missing": df.isnull().sum(),
-            "percent_missing": (df.isnull().sum() / len(df) * 100).round(2),
-        }
-    ).sort_values("percent_missing", ascending=False)
-
-    missing_stats["impact"] = missing_stats["percent_missing"].apply(
-        lambda x: "High" if x > 15 else ("Medium" if x > 5 else "Low")
-    )
-    return missing_stats
-
-
-def check_data_consistency(df, date_columns, numeric_columns):
-    consistency_issues = []
-    # Date validation
-    for col in date_columns:
-        future_dates = df[df[col] > datetime.now()][col].count()
-        if future_dates > 0:
-            consistency_issues.append(
-                f"WARNING: {future_dates} future dates found in {col}"
-            )
-    return consistency_issues
-
-
-def check_duplicates(df, subset_columns=None):
-    duplicate_report = {
-        "exact_duplicates": df.duplicated().sum(),
-        "partial_duplicates": df.duplicated(subset=subset_columns).sum()
-        if subset_columns
-        else 0,
-    }
-    return duplicate_report
-
-
-def check_time_series_completeness(
-    df: DataFrame,
-    start="31-12-2014 23:00",
-    end="31-03-2026 23:00",
-    datetime_column="DateUTC",
-    frequency="h",
-):
-    """Check whether a time series contains every expected timestamp exactly once.
-
-    ``start`` and ``end`` are inclusive. The timestamps can either be in
-    ``datetime_column`` or in a DatetimeIndex with that name. Rows outside the
-    requested interval are reported but do not make that interval incomplete.
-    """
-    if datetime_column in df.columns:
-        raw_timestamps = df[datetime_column]
-    elif df.index.name == datetime_column or isinstance(df.index, pd.DatetimeIndex):
-        raw_timestamps = df.index
+@pytest.fixture(scope="module")
+def timestamps(panel: DataFrame) -> DatetimeIndex:
+    """Provide normalized timestamps for the time-series tests."""
+    if DATETIME_COLUMN in panel.columns:
+        values = panel[DATETIME_COLUMN]
     else:
-        raise KeyError(
-            f"'{datetime_column}' was not found as a column or datetime index."
-        )
+        values = panel.index
 
-    # UTC is used so timezone-aware and timezone-naive DateUTC values can be
-    # compared. The timezone is then removed from both sides of the comparison.
-    timestamps = pd.DatetimeIndex(
-        pd.to_datetime(raw_timestamps, errors="coerce", dayfirst=True, utc=True)
-    ).tz_localize(None)
-    valid_timestamps = timestamps[~timestamps.isna()]
+    return DatetimeIndex(data=pd.to_datetime(values, errors="coerce", utc=True))
 
-    start_timestamp = pd.to_datetime(start, dayfirst=True, utc=True).tz_localize(None)
-    end_timestamp = pd.to_datetime(end, dayfirst=True, utc=True).tz_localize(None)
-    if start_timestamp > end_timestamp:
-        raise ValueError("start must be before or equal to end")
 
-    expected_timestamps = pd.date_range(
-        start=start_timestamp,
-        end=end_timestamp,
-        freq=frequency,
+@pytest.fixture(scope="module")
+def valid_timestamps(timestamps: DatetimeIndex) -> DatetimeIndex:
+    return timestamps.dropna()
+
+
+@pytest.fixture(scope="module")
+def expected_timestamps() -> DatetimeIndex:
+    return pd.date_range(
+        start=START_DATETIME,
+        end=END_DATETIME,
+        freq=FREQUENCY,
     )
-    observed_in_range = valid_timestamps[
-        (valid_timestamps >= start_timestamp) & (valid_timestamps <= end_timestamp)
-    ]
 
-    missing_timestamps = expected_timestamps.difference(other=observed_in_range)
-    duplicate_timestamps = (
-        observed_in_range[observed_in_range.duplicated(keep=False)]
-        .unique()
-        .sort_values()
-    )
-    unexpected_timestamps = (
-        valid_timestamps[
-            (valid_timestamps < start_timestamp) | (valid_timestamps > end_timestamp)
-        ]
-        .unique()
-        .sort_values()
-    )
-    invalid_timestamp_count = int(timestamps.isna().sum())
 
-    return {
-        "is_complete": (
-            len(missing_timestamps) == 0
-            and len(duplicate_timestamps) == 0
-            and invalid_timestamp_count == 0
-        ),
-        "expected_timestamp_count": len(expected_timestamps),
-        "observed_row_count": len(timestamps),
-        "observed_in_range_count": len(observed_in_range),
-        "missing_timestamps": missing_timestamps,
-        "duplicate_timestamps": duplicate_timestamps,
-        "unexpected_timestamps": unexpected_timestamps,
-        "invalid_timestamp_count": invalid_timestamp_count,
-    }
+def test_datetime_field_exists(panel: DataFrame) -> None:
+    has_datetime_column = DATETIME_COLUMN in panel.columns
+    has_datetime_index = panel.index.name == DATETIME_COLUMN
+
+    assert has_datetime_column or has_datetime_index
+
+
+def test_all_timestamps_are_valid(timestamps: DatetimeIndex) -> None:
+    invalid_count = int(timestamps.isna().sum())
+
+    assert invalid_count == 0, f"{invalid_count} ungültige Zeitstempel gefunden"
+
+
+def test_no_duplicate_timestamps(valid_timestamps: DatetimeIndex) -> None:
+    duplicates = valid_timestamps[valid_timestamps.duplicated(keep=False)].unique()
+
+    assert duplicates.empty, (
+        f"Doppelte Zeitstempel gefunden (Summe: {duplicates.shape[0]}): {duplicates.tolist()}"
+    )
+
+
+def test_no_timestamps_before_start(
+    valid_timestamps: DatetimeIndex,
+) -> None:
+    start = START_DATETIME
+    timestamps_before_start = valid_timestamps[valid_timestamps < start]
+
+    assert timestamps_before_start.empty, (
+        f"Zeitstempel vor dem erwarteten Start gefunden (Summe: {timestamps_before_start.shape[0]}): "
+        f"{timestamps_before_start.tolist()}"
+    )
+
+
+def test_no_timestamps_after_end(
+    valid_timestamps: DatetimeIndex,
+) -> None:
+    end = END_DATETIME
+    timestamps_after_end = valid_timestamps[valid_timestamps > end]
+
+    assert timestamps_after_end.empty, (
+        f"Zeitstempel nach dem erwarteten Ende gefunden (Summe: {timestamps_after_end.shape[0]}): "
+        f"{timestamps_after_end.tolist()}"
+    )
+
+
+def test_no_hourly_timestamps_are_missing(
+    valid_timestamps: DatetimeIndex,
+    expected_timestamps: DatetimeIndex,
+) -> None:
+    missing_timestamps = expected_timestamps.difference(valid_timestamps)
+
+    assert missing_timestamps.empty, (
+        f"Fehlende Zeitstempel gefunden (Summe: {missing_timestamps.shape[0]}): {missing_timestamps.tolist()}"
+    )
+
+
+def test_no_exact_duplicate_rows(panel: DataFrame) -> None:
+    duplicate_count = int(panel.duplicated().sum())
+
+    assert duplicate_count == 0, (
+        f"{duplicate_count} vollständig identische Zeilen gefunden"
+    )
+
+
+def test_no_missing_values(panel: DataFrame) -> None:
+    missing_values = panel.isna().sum()
+    affected_columns = missing_values[missing_values > 0].to_dict()
+
+    assert not affected_columns, (
+        f"Fehlende Werte gefunden (Summe: {sum(affected_columns.values())}): {affected_columns}"
+    )
