@@ -3,13 +3,10 @@ from pathlib import Path
 import pandas as pd
 
 
-PANEL_PATH = Path(__file__).resolve().parents[1] / "data" / "processed" / "panel.csv"
-
-
-def load_panel():
-    df = pd.read_csv(PANEL_PATH, sep=";")
+def load_panel(type: str) -> pd.DataFrame:
+    panel_path = Path(__file__).resolve().parents[1] / "data" / type / "panel.csv"
+    df = pd.read_csv(panel_path, sep=";")
     df["DateUTC"] = pd.to_datetime(df["DateUTC"])
-    df["DateUTC"] = df["DateUTC"].dt.floor("h")
     df.set_index("DateUTC", inplace=True)
     df["Value"] = df["Value"].astype(float)
 

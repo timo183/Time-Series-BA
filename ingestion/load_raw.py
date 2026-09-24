@@ -25,22 +25,26 @@ FLOAT_OVERRIDES = {
 
 def load_2019_2026_file(path: str):
     df: DataFrame = pl.read_csv(
-        f"data/raw/{path}", separator="\t", schema_overrides=FLOAT_OVERRIDES
+        f"data/bronze/{path}", separator="\t", schema_overrides=FLOAT_OVERRIDES
     )
     if "CountryCode" not in df.columns:  # 2021/2022 sind mit ; getrennt
         df = pl.read_csv(
-            f"data/raw/{path}", separator=";", schema_overrides=FLOAT_OVERRIDES
+            f"data/bronze/{path}", separator=";", schema_overrides=FLOAT_OVERRIDES
         )
     df = df.with_columns(
-        pl.col("DateUTC").str.to_datetime(time_unit="ms").alias("DateUTC")
+        pl.col("DateUTC").str.to_datetime(time_unit="ms").alias("DateUTC"),
+        pl.col("TimeFrom", "TimeTo").str.to_time(),
     )
     return df
 
 
 def load_2015_2019_file(path: str):
-    sheets = pl.read_excel(f"data/raw/{path}", sheet_name=["2015-2017", "2018-2019"])
+    sheets = pl.read_excel(f"data/bronze/{path}", sheet_name=["2015-2017", "2018-2019"])
     df = pl.concat([sheets["2015-2017"], sheets["2018-2019"]], how="vertical")
-    df = df.with_columns(pl.col("DateUTC").cast(pl.Datetime("ms")))
+    df = df.with_columns(
+        pl.col("DateUTC").cast(pl.Datetime("ms")),
+        pl.col("TimeFrom", "TimeTo").cast(pl.Time),
+    )
     return df
 
 
@@ -49,11 +53,11 @@ def filter_country(df: DataFrame):
 
 
 def select_rellevant_columns(df: DataFrame):
-    return df.select(["DateUTC", "Value"])
+    return df.select(["DateUTC", "Value", "TimeFrom", "TimeTo"])
 
 
 def save_df(df: DataFrame):
-    output_path = Path("data/processed/panel.csv")
+    output_path = Path("data/silver/panel.csv")
     if output_path.exists():
         return
     df.write_csv(

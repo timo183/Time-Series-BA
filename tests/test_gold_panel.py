@@ -14,7 +14,7 @@ from config import (
 @pytest.fixture(scope="module")
 def panel() -> DataFrame:
     """Load the processed electricity-load panel once for this test module."""
-    return load_panel()
+    return load_panel(type="gold")
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +99,7 @@ def test_no_hourly_timestamps_are_missing(
 
 
 def test_no_exact_duplicate_rows(panel: DataFrame) -> None:
-    duplicate_count = int(panel.duplicated().sum())
+    duplicate_count = int(panel.reset_index().duplicated().sum())
 
     assert duplicate_count == 0, (
         f"{duplicate_count} vollständig identische Zeilen gefunden"
