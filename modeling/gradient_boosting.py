@@ -65,7 +65,7 @@ class GradientBoostingModel(ForecastModel):
         df: pd.DataFrame,
     ) -> "GradientBoostingModel":
         features = self.build_features(df)
-        train_set = features.join(df[["Value"]])
+        train_set = features.join(df[["Value"]]).dropna()
 
         models = {}
 
@@ -87,23 +87,38 @@ class GradientBoostingModel(ForecastModel):
         return self
 
     def predict(self, df: pd.DataFrame) -> pd.Series:
+        history = df[["Value"]].copy()
+        daily_predictions = []
 
-        target_times = pd.date_range(
-            start=df.index[-1] + pd.Timedelta(hours=1),
-            periods=24,
-            freq="h",
-            name=df.index.name,
-        )
+        for _ in range(7):
+            target_times = pd.date_range(
+                start=history.index[-1] + pd.Timedelta(hours=1),
+                periods=24,
+                freq="h",
+                name=history.index.name,
+            )
 
-        features = self.build_features(df, target_times)
+            features = self.build_features(history, target_times)
 
-        predictions = [
-            float(self.models[timestamp.hour].predict(features.loc[[timestamp]])[0])
-            for timestamp in target_times
-        ]
+            if features.isna().any().any():
+                raise ValueError(
+                    "Insufficient history or missing values in forecast features."
+                )
 
-        return pd.Series(
-            predictions,
-            index=target_times,
-            name="prediction",
-        )
+            predictions = pd.Series(
+                [
+                    float(
+                        self.models[timestamp.hour].predict(features.loc[[timestamp]])[
+                            0
+                        ]
+                    )
+                    for timestamp in target_times
+                ],
+                index=target_times,
+                name="prediction",
+            )
+
+            daily_predictions.append(predictions)
+            history = pd.concat([history, predictions.rename("Value").to_frame()])
+
+        return pd.concat(daily_predictions)
