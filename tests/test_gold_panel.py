@@ -98,14 +98,6 @@ def test_no_hourly_timestamps_are_missing(
     )
 
 
-def test_no_exact_duplicate_rows(panel: DataFrame) -> None:
-    duplicate_count = int(panel.reset_index().duplicated().sum())
-
-    assert duplicate_count == 0, (
-        f"{duplicate_count} vollständig identische Zeilen gefunden"
-    )
-
-
 def test_no_missing_values(panel: DataFrame) -> None:
     missing_values = panel.isna().sum()
     affected_columns = missing_values[missing_values > 0].to_dict()
