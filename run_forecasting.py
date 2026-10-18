@@ -12,7 +12,7 @@ def main() -> None:
     panel = load_panel(type="gold").sort_index()
     logger.info("Training on %s observations through %s", len(panel), panel.index[-1])
 
-    model = GradientBoostingModel().fit(panel)
+    model: GradientBoostingModel = GradientBoostingModel().fit(panel)
     predictions = model.predict(panel)
     logger.info("Next 24 hours:\n%s", predictions.to_string())
 

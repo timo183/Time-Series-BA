@@ -67,7 +67,7 @@ class GradientBoostingModel(ForecastModel):
         features = self.build_features(df)
         train_set = features.join(df[["Value"]]).dropna()
 
-        models = {}
+        models: dict[int, XGBRegressor] = {}
 
         for hour in range(24):
             hourly_train = train_set.loc[train_set.index.hour == hour]
