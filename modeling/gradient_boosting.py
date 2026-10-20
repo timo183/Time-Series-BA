@@ -1,13 +1,40 @@
+import numpy as np
 import pandas as pd
+from sktime.forecasting.base import BaseForecaster
 from xgboost import XGBRegressor
 
-from modeling.protocols import ForecastModel
 
+class GradientBoostingModel(BaseForecaster):
+    _tags = {
+        "y_inner_mtype": "pd.Series",
+        "scitype:y": "univariate",
+        "capability:exogenous": False,
+        "requires-fh-in-fit": False,
+    }
 
-class GradientBoostingModel(ForecastModel):
-    def __init__(self):
-        self.models: dict[int, XGBRegressor] = {}
-        self.train_set: pd.DataFrame | None = None
+    def __init__(
+        self,
+        n_lags=12,
+        period=12,
+        K=3,
+        n_estimators=200,
+        learning_rate=0.05,
+        max_depth=4,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+    ):
+        self.n_lags = n_lags
+        self.period = period
+        self.K = K
+        self.n_estimators = n_estimators
+        self.learning_rate = learning_rate
+        self.max_depth = max_depth
+        self.subsample = subsample
+        self.colsample_bytree = colsample_bytree
+        self.random_state = random_state
+
+        super().__init__()
 
     def _build_lag_features(
         self,
@@ -60,65 +87,71 @@ class GradientBoostingModel(ForecastModel):
             axis=1,
         )
 
-    def fit(
+    def _fit(
         self,
-        df: pd.DataFrame,
+        y: pd.Series,
+        X: pd.DataFrame | None = None,
+        fh=None,
     ) -> "GradientBoostingModel":
-        features = self.build_features(df)
-        train_set = features.join(df[["Value"]]).dropna()
+        features = self.build_features(y.to_frame(name="Value"))
 
-        models: dict[int, XGBRegressor] = {}
+        valid_rows = features.notna().all(axis=1) & y.notna()
+        train_features = features.loc[valid_rows]
+        train_targets = y.loc[valid_rows]
 
-        for hour in range(24):
-            hourly_train = train_set.loc[train_set.index.hour == hour]
+        if train_features.empty:
+            raise ValueError("Insufficient history to build training features.")
 
-            model = XGBRegressor(
-                objective="reg:squarederror",
-                random_state=42,
-            )
-            model.fit(
-                hourly_train[features.columns],
-                hourly_train["Value"],
-            )
-            models[hour] = model
+        self.model_ = XGBRegressor(
+            n_estimators=self.n_estimators,
+            learning_rate=self.learning_rate,
+            max_depth=self.max_depth,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            objective="reg:squarederror",
+            tree_method="hist",
+            random_state=self.random_state,
+        )
+        self.model_.fit(train_features, train_targets)
 
-        self.models = models
-        self.train_set = train_set
+        self.history_ = y.copy()
+        self.target_name_ = y.name
+
         return self
 
-    def predict(self, df: pd.DataFrame) -> pd.Series:
-        history = df[["Value"]].copy()
-        daily_predictions = []
+    def _predict(self, fh, X=None) -> pd.Series:
+        steps = fh.to_relative(self.cutoff).to_numpy().astype(int)
 
-        for _ in range(7):
-            target_times = pd.date_range(
-                start=history.index[-1] + pd.Timedelta(hours=1),
-                periods=24,
-                freq="h",
-                name=history.index.name,
+        if np.any(steps <= 0):
+            raise ValueError("Only future forecasts supported.")
+
+        history = self.history_.to_frame(name="Value").astype(float)
+
+        target_times = pd.date_range(
+            start=history.index[-1] + pd.Timedelta(hours=1),
+            periods=int(steps.max()),
+            freq="h",
+            name=history.index.name,
+        )
+
+        predictions = []
+
+        for timestamp in target_times:
+            features = self.build_features(
+                history,
+                target_times=pd.DatetimeIndex([timestamp]),
             )
-
-            features = self.build_features(history, target_times)
 
             if features.isna().any().any():
-                raise ValueError(
-                    "Insufficient history or missing values in forecast features."
-                )
+                raise ValueError("Insufficient history or missing forecast features.")
 
-            predictions = pd.Series(
-                [
-                    float(
-                        self.models[timestamp.hour].predict(features.loc[[timestamp]])[
-                            0
-                        ]
-                    )
-                    for timestamp in target_times
-                ],
-                index=target_times,
-                name="prediction",
-            )
+            prediction = float(self.model_.predict(features)[0])
+            predictions.append(prediction)
 
-            daily_predictions.append(predictions)
-            history = pd.concat([history, predictions.rename("Value").to_frame()])
+            history.loc[timestamp, "Value"] = prediction
 
-        return pd.concat(daily_predictions)
+        return pd.Series(
+            np.asarray(predictions)[steps - 1],
+            index=fh.to_absolute_index(self.cutoff),
+            name=self.target_name_,
+        )
