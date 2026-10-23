@@ -10,10 +10,10 @@ from sktime.split import ExpandingWindowSplitter
 from common.loader import load_panel
 from modeling.gradient_boosting import GradientBoostingModel
 
-# Fixed evaluation dates, interpreted as UTC.
-TEST_START = pd.Timestamp("2025-04-01")
+# Initial training uses all data before TEST_START; dates are UTC.
+TEST_START = pd.Timestamp("2024-04-01")
 TEST_END = pd.Timestamp("2026-04-01")  # Exclusive.
-HORIZON = 168
+HORIZON = 168  # Hours: seven days.
 
 
 def main() -> None:
@@ -64,11 +64,16 @@ def main() -> None:
         error_score="raise",
     )
 
-    # Each fold contains exactly 24 hours, so folds have equal weight.
+    # Each fold contains HORIZON hours, so folds have equal weight.
     mae = results["test_MeanAbsoluteError"].mean()
     rmse = np.sqrt(results["test_MeanSquaredError"].mean())
 
-    print(f"Evaluated days: {len(results)}")
+    evaluated_hours = len(results) * HORIZON
+
+    print(f"Forecast horizon: {HORIZON} hours")
+    print(f"Evaluated forecast blocks: {len(results)}")
+    print(f"Evaluated hours: {evaluated_hours}")
+    print(f"Evaluated days: {evaluated_hours / 24:.1f}")
     print(f"MAE:  {mae:.3f}")
     print(f"RMSE: {rmse:.3f}")
 
