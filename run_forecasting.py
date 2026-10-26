@@ -10,8 +10,7 @@ from sktime.split import ExpandingWindowSplitter
 from common.loader import load_panel
 from modeling.gradient_boosting import GradientBoostingModel
 
-# Initial training uses all data before TEST_START; dates are UTC.
-TEST_START = pd.Timestamp("2024-04-01")
+TEST_START = pd.Timestamp("2026-01-01")
 TEST_END = pd.Timestamp("2026-04-01")  # Exclusive.
 HORIZON = 168  # Hours: seven days.
 
