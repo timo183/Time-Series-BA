@@ -7,38 +7,19 @@ from sktime.performance_metrics.forecasting import (
 )
 from sktime.split import ExpandingWindowSplitter
 
-from common.loader import load_panel
+from config import DATA_SPLIT
+from ingestion import LoadPanel
 from modeling.gradient_boosting import GradientBoostingModel
 
-TEST_START = pd.Timestamp("2026-01-01")
-TEST_END = pd.Timestamp("2026-04-01")  # Exclusive.
+# Naive UTC, matching LoadPanel.series(); TEST_END is exclusive.
+TEST_START = pd.Timestamp(DATA_SPLIT.test_start).tz_convert(None)
+TEST_END = pd.Timestamp(DATA_SPLIT.test_end).tz_convert(None)
 HORIZON = 168  # Hours: seven days.
 
 
 def main() -> None:
-    panel = load_panel(type="gold")
-    y = panel["Value"].copy()
-
-    y.index = pd.to_datetime(y.index, utc=True).tz_convert(None)
-    y = y.sort_index()
-
-    if y.index.has_duplicates:
-        raise ValueError("Duplicate timestamps found.")
-
-    y = y.loc[y.index < TEST_END].asfreq("h")
-
-    if not np.isfinite(y.to_numpy()).all():
-        raise ValueError("Missing hours or invalid load values found.")
-
-    expected_test_index = pd.date_range(
-        TEST_START,
-        TEST_END,
-        freq="h",
-        inclusive="left",
-        name=y.index.name,
-    )
-    if not y.loc[y.index >= TEST_START].index.equals(expected_test_index):
-        raise ValueError("The complete evaluation period is required.")
+    # series() raises unless every hour up to TEST_END is present.
+    y = LoadPanel().series(end=TEST_END)
 
     initial_window = int((y.index < TEST_START).sum())
     if initial_window < 8 * 24:

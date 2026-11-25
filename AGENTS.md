@@ -4,11 +4,11 @@
 
 This repository contains a Python 3.12 time-series analysis project for German electricity-load data.
 
-- `ingestion/` reads raw CSV/XLSX inputs and creates `data/processed/panel.csv`.
-- `common/` contains reusable data-loading helpers.
+- `ingestion/` builds the cleaned load panel: `sources.py` reads the raw ENTSO-E CSVs, `cleaning.py` (`PanelCleaner`) validates and corrects them, and `panel.py` (`LoadPanel`) is the entry point for notebooks and pipelines (`to_pandas()`, `series()`, `splits()`). The cleaned panel is cached in `data/processed/panel.parquet`.
+- `config.py` holds paths, the panel window and the train/validation/test split dates (`DD-MM-YYYY`).
+- `common/` contains shared helpers such as logging configuration.
 - `eda/` holds exploratory notebooks and plotting/statistical utilities.
-- `quality_check/` contains data-validation functions and their current pytest test module.
-- `modeling/` is reserved for forecasting or statistical model code.
+- `modeling/` contains the forecasting models; `run_benchmark.py` and `run_forecasting.py` evaluate them.
 - `main.py` is the lightweight application entry point.
 - `pyproject.toml` and `uv.lock` define the environment; `data/` is intentionally Git-ignored.
 
@@ -18,9 +18,8 @@ Keep reusable logic in Python modules rather than notebooks. Do not commit gener
 
 - `uv sync` installs the locked runtime and development dependencies.
 - `uv run python main.py` runs the current entry point.
-- `uv run python ingestion/load_raw.py` builds the processed panel from files in `data/raw/`.
-- `uv run pytest quality_check/test_panel.py` runs the existing automated test directly.
-- `uv run pytest` runs configured discovery after tests are placed under the `tests/` directory specified in `pyproject.toml`.
+- `uv run python -m ingestion` rebuilds the panel cache from the files in `data/raw/`.
+- `uv run pytest` runs all tests under `tests/`.
 
 Run commands from the repository root so relative data paths resolve correctly.
 

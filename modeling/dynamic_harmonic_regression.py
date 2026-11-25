@@ -24,12 +24,14 @@ class DynamicHarmonicRegressionModel(BaseForecaster):
         periods: tuple[float, ...] = (24, 168),
         harmonics: tuple[int, ...] = (3, 3),
         order: tuple[int, int, int] = (1, 0, 1),
+        seasonal_order: tuple[int, int, int, int] = (0, 0, 0, 0),
         minimum_history: int = 168,
         maxiter: int = 200,
     ) -> None:
         self.periods = periods
         self.harmonics = harmonics
         self.order = order
+        self.seasonal_order = seasonal_order
         self.minimum_history = minimum_history
         self.maxiter = maxiter
 
@@ -45,7 +47,7 @@ class DynamicHarmonicRegressionModel(BaseForecaster):
 
         features = pd.DataFrame(index=index)
 
-        if self.order[1] == 0:
+        if self.order[1] == 0 and self.seasonal_order[1] == 0:
             features["constant"] = np.ones(len(index))
 
         for number, frequency in enumerate(self.frequencies_):
@@ -90,7 +92,7 @@ class DynamicHarmonicRegressionModel(BaseForecaster):
             y / self.scale_,
             exog=self._build_features(y.index),
             order=self.order,
-            seasonal_order=(0, 0, 0, 0),
+            seasonal_order=self.seasonal_order,
             trend="n",
         )
         self.result_ = model.fit(
